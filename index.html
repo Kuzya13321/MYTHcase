@@ -301,7 +301,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const RARITY_COLOR={green:'#3ddc97',blue:'#4d9dff',purple:'#a855f7',red:'#ff4d6d',tiffany:'#40e0d0'};
 const RARITY_LABEL={green:'Зелёный',blue:'Синий',purple:'Фиолетовый',red:'Красный',tiffany:'Тиффани'};
 const RARITY_EMOJI={green:'🟢',blue:'🔵',purple:'🟣',red:'🔴',tiffany:'💎'};
-const LS_CONFIG='myth_config_v4';
+const LS_CONFIG='myth_config_v5';
 const LS_GATE='myth_gate_ok';
 
 const DEFAULT_CONFIG = {
@@ -333,7 +333,7 @@ function loadConfig(){try{const c=JSON.parse(localStorage.getItem(LS_CONFIG)||'n
 function saveConfig(c){localStorage.setItem(LS_CONFIG,JSON.stringify(c))}
 let CONFIG=loadConfig();
 
-let currentUser=null; // {id, username, role, balance, cases}
+let currentUser=null;
 let inventoryCache=[];
 
 /* ================= canvas фон ================= */
@@ -440,11 +440,17 @@ function showAuthPrompt(){
       const {data,error}=await sb.auth.signUp({email,password:pass});
       if(error){err.textContent=error.message;return;}
       if(!data.user){err.textContent='Ошибка регистрации';return;}
-      // создаём профиль
+      // Создаем профиль
       const {error:pe}=await sb.from('profiles').insert({id:data.user.id,username:name,role:'player',balance:0,cases:{10:0,20:0,80:0}});
       if(pe && pe.code!=='23505'){err.textContent=pe.message;return;}
-      const p=await fetchProfile(data.user.id);
-      if(p){ box.remove(); loginAs(p); }
+      
+      // После регистрации сразу логиним, если сессия есть
+      if(data.session){
+         const p=await fetchProfile(data.user.id);
+         if(p){ box.remove(); loginAs(p); }
+      } else {
+         err.textContent='Успешно! Теперь войдите.';
+      }
     } else {
       const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
       if(error){err.textContent='Неверный ник или пароль';return;}
@@ -710,8 +716,17 @@ function subscribeHistory(){
 /* ================= инвентарь ================= */
 async function loadInventory(){
   if(!currentUser) return;
-  const {data}=await sb.from('inventory').select('*').eq('user_id',currentUser.id).eq('status','held').order('created_at',{ascending:false});
-  inventoryCache=data||[];
+  const {data, error} = await sb.from('inventory')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('status', 'held')
+    .order('created_at', {ascending: false});
+    
+  if(error){
+    console.error("ОШИБКА ИНВЕНТАРЯ:", error);
+    return;
+  }
+  inventoryCache = data || [];
   renderInventory();
 }
 function renderInventory(){
@@ -896,7 +911,7 @@ function renderSettingsCases(){
         <input class="field" data-k="price" type="number" value="${c.price}" style="max-width:110px" title="Цена ₽">
       </div>
       <div class="row">
-                <input class="field" data-k="image" value="${c.image||''}" placeholder="URL картинки кейса" style="flex:1">
+        <input class="field" data-k="image" value="${c.image||''}" placeholder="URL картинки кейса" style="flex:1">
         <input type="file" accept="image/*" style="display:none" id="file-${i}">
         <button class="btn sm ghost" id="upload-${i}">Файл</button>
       </div>
@@ -1067,6 +1082,5 @@ async function renderSettingsUsers(){
   }
 })();
 </script>
-
 </body>
 </html>
